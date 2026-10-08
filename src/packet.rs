@@ -38,7 +38,11 @@ fn build_map(frags: &[Fragment]) -> Result<BTreeMap<usize, &Fragment>, AssemblyE
     let mut map: BTreeMap<usize, &Fragment> = BTreeMap::new();
     let offset: usize = 0;
 
+    let mut greatest_offset: usize = 0;
+    let mut greatest_len: usize = 0;
+
     for frag in frags {
+        // check for fragements inside other frags
         // try to insert frag, if there is a collision return early with
         // Err(AssemblyErr::PacketCollisionDetected)
         match map.entry(offset) {
@@ -50,10 +54,27 @@ fn build_map(frags: &[Fragment]) -> Result<BTreeMap<usize, &Fragment>, AssemblyE
                 e.insert(frag);
             }
         }
+
+        if frag.offset > greatest_offset {
+            greatest_offset = frag.offset;
+            greatest_len = frag.data.len();
+        }
     }
     // check for gaps
     // if there are none: return the map
-    
+    let packet_len = greatest_offset + greatest_len;
+    let mut offset: usize = 0;
+
+    while offset < packet_len {
+        match map.entry(offset) {
+            Entry::Occupied(e) => {
+                offset += e.get().offset;
+            }
+            Entry::Vacant(_e) => {
+                return Err(AssemblyErr::PacketGapDetected(offset));
+            }
+        }
+    }
     
     Ok(map)
 }
@@ -71,7 +92,7 @@ fn assemble_packet(packet_len: usize, mut packet_map: BTreeMap<usize, &Fragment>
         
         // buf[offset..offset+len] = frag.data[0..len]
         buf[offset..offset + len].copy_from_slice(&frag.data);
-        offset += frag.offset;
+        offset += len;
     }
     
     Some(buf)
